@@ -17,17 +17,15 @@ class StrFormat:
 
 
 # Required global variables.
-tcp_port: int = DEFAULT_PORT
+tcp_port: int
 client_sockets: list[socket]
 main_socket: socket
 
 
 def setup_socket():
 
-    a = StrFormat.ERROR
-    print(a)
-
     global tcp_port
+    tcp_port = DEFAULT_PORT
     global main_socket
 
     try:
@@ -37,6 +35,7 @@ def setup_socket():
     except ValueError:
         print("Not a valid port. Please enter an integer.")
         setup_socket()
+        return
 
     main_socket = socket.socket()
 
@@ -48,9 +47,11 @@ def setup_socket():
     except PermissionError:
         print("Port reserved by operating system. Choose another one.")
         setup_socket()
+        return
     except OverflowError:
         print("Port is outside range. Port must be 0-65535")
         setup_socket()
+        return
 
     main_socket.listen()
 
