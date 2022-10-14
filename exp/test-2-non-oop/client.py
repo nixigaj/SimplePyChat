@@ -4,16 +4,10 @@ import sys
 import threading
 import random
 
-
-def get_random_string(length):
-    # choose from all lowercase letter
-    letters = string.ascii_lowercase
-    return ''.join(random.choice(letters) for _ in range(length))
-
-
 DEFAULT_PORT = 13377
 DEFAULT_IP = 'nixivps'
-DEFAULT_USERNAME = f"user-{get_random_string(4)}"
+DEFAULT_USERNAME = 'user-' + \
+                   ''.join(random.choice(string.ascii_lowercase) for _ in range(4))
 
 # Required global variables because this is not OOP yet.
 tcp_port: int
