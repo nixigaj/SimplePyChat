@@ -1,8 +1,8 @@
+import random
 import socket
 import string
 import sys
 import threading
-import random
 
 DEFAULT_PORT = 13377
 DEFAULT_IP = 'nixivps'
@@ -12,6 +12,8 @@ DEFAULT_USERNAME = 'user-' + \
 # Required global variables because this is not OOP yet.
 tcp_port: int
 client_socket: socket
+client_username: str
+server_ip: str
 
 
 def client_recv():
@@ -32,7 +34,7 @@ def client_recv():
 def client_send():
     global client_socket
 
-    msg = f"{DEFAULT_USERNAME}: {input()}"
+    msg = f"{client_username}: {input()}"
     try:
         client_socket.sendall(msg.encode())
     except OSError:
@@ -56,11 +58,20 @@ def setup_client_socket():
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     try:
-        client_socket.connect((DEFAULT_IP, tcp_port))
+        client_socket.connect((server_ip, tcp_port))
     except OverflowError:
         print("Port is outside range. Port must be 0-65535")
         setup_client_socket()
         return
+
+
+def setup_username():
+    global client_username
+    client_username = DEFAULT_USERNAME
+
+    username_string = input(f"Enter username [{DEFAULT_USERNAME}]: ")
+    if username_string != "":
+        client_username = username_string
 
 
 def cleanup():
@@ -70,9 +81,20 @@ def cleanup():
         pass
 
 
+def setup_server_address():
+    global server_ip
+    server_ip = DEFAULT_IP
+
+    address_string = input(f"Enter server address [{DEFAULT_IP}]: ")
+    if address_string != "":
+        server_ip = address_string
+
+
 def main():
     try:
+        setup_server_address()
         setup_client_socket()
+        setup_username()
         threading.Thread(target=client_recv, daemon=True).start()
         while True:
             client_send()
