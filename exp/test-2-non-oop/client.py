@@ -36,7 +36,7 @@ def client_send():
 
     msg = f"{client_username}: {input()}"
     try:
-        client_socket.sendall(msg.encode())
+        client_socket.send(msg.encode())
     except OSError:
         sys.exit(0)
 
