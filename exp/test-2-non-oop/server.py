@@ -48,6 +48,22 @@ def setup_server_socket():
     print("Socket setup finished.")
 
 
+def set_keepalive_linux(after_idle_sec=1, interval_sec=3, max_fails=5):
+    """Set TCP keepalive on an open socket.
+
+    It activates after 1 second (after_idle_sec) of idleness,
+    then sends a keepalive ping once every 3 seconds (interval_sec),
+    and closes the connection after 5 failed ping (max_fails), or 15 seconds
+    """
+
+    global server_socket
+
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, after_idle_sec)
+    server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, interval_sec)
+    server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, max_fails)
+
+
 def assign_global_variables():
     global input_sockets
     global output_sockets
@@ -66,29 +82,31 @@ def add_msg_to_all_queue(msg: str):
 
 
 def handle_sockets():
-    print("Waiting for signal...")
     readable_sockets, writable_sockets, exceptional_sockets = select.select(
         input_sockets, output_sockets, input_sockets)
 
-    for readable in readable_sockets:
-        # If server socket is readable: add a new client.
-        if readable is server_socket:
-            connection, client_address = readable.accept()
-            connection.setblocking(False)
-            input_sockets.append(connection)
-            message_queues[connection] = queue.Queue()
-        else:
-            msg = readable.recv(1024).decode()
-            # If there is data from the socket: send it to all clients.
-            if msg:
-                if msg != '$SERVER_CLOSED':
-                    add_msg_to_all_queue(msg)
+    try:
+        for readable in readable_sockets:
+            # If server socket is readable: add a new client.
+            if readable is server_socket:
+                connection, client_address = readable.accept()
+                connection.setblocking(False)
+                input_sockets.append(connection)
+                message_queues[connection] = queue.Queue()
             else:
-                if readable in output_sockets:
-                    output_sockets.remove(readable)
-                input_sockets.remove(readable)
-                readable.close()
-                del message_queues[readable]
+                msg = readable.recv(1024).decode()
+                # If there is data from the socket: send it to all clients.
+                if msg:
+                    if msg != '$SERVER_CLOSED':
+                        add_msg_to_all_queue(msg)
+                else:
+                    if readable in output_sockets:
+                        output_sockets.remove(readable)
+                    input_sockets.remove(readable)
+                    readable.close()
+                    del message_queues[readable]
+    except TimeoutError:
+        print("A client timed out.")
 
     for writable in writable_sockets:
         try:
@@ -121,6 +139,7 @@ def cleanup():
 def main():
     try:
         setup_server_socket()
+        set_keepalive_linux()
         assign_global_variables()
         while True:
             handle_sockets()

@@ -5,7 +5,7 @@ import sys
 import threading
 
 DEFAULT_PORT = 13377
-DEFAULT_IP = 'localhost'
+DEFAULT_IP = 'nixivps'
 DEFAULT_USERNAME = 'user-' + \
                    ''.join(random.choice(string.ascii_lowercase) for _ in range(4))
 
