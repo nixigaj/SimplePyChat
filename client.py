@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2022 Erik Junsved and Johan Raab
 
@@ -7,8 +9,8 @@ import string
 import sys
 import threading
 
-DEFAULT_PORT = 13377
-DEFAULT_IP = 'nixivps'
+DEFAULT_PORT = 22424
+DEFAULT_IP = 'a.erix.dev'
 DEFAULT_USERNAME = 'user-' + \
                    ''.join(random.choice(string.ascii_lowercase) for _ in range(4))
 
@@ -58,10 +60,22 @@ def setup_client_socket():
         setup_client_socket()
         return
 
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    socketV4 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    socketV6 = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
 
     try:
-        client_socket.connect((server_ip, tcp_port))
+        try:
+            socketV4.connect((server_ip, tcp_port))
+            client_socket = socketV4
+        except socket.gaierror:
+            try:
+                socketV6.connect((server_ip, tcp_port))
+                client_socket = socketV6
+            except socket.gaierror as e:
+                print(f"Failed to connect: {e}")
+                setup_server_address()
+                setup_client_socket()
+                return
     except OverflowError:
         print("Port is outside range. Port must be 0-65535")
         setup_client_socket()
