@@ -1,24 +1,55 @@
+#!/usr/bin/python3
+
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2022 Erik Junsved and Johan Raab
 
-import queue
-import select
+import random
 import socket
+import string
+import sys
+import threading
 
-DEFAULT_PORT = 13377
+DEFAULT_PORT = 22424
+DEFAULT_IP = 'a.erix.dev'
+DEFAULT_USERNAME = 'user-' + \
+                   ''.join(random.choice(string.ascii_lowercase) for _ in range(4))
 
 # Required global variables because this is not OOP yet.
 tcp_port: int
-server_socket: socket
-input_sockets: list[socket]
-output_sockets: list[socket]
-message_queues: dict
+client_socket: socket
+client_username: str
+server_ip: str
 
 
-def setup_server_socket():
+def client_recv():
+    while True:
+        msg = client_socket.recv(1024).decode()
+        if msg:
+            if msg == '$SERVER_CLOSED':
+                print("Server closed. Press enter or ctrl+c to quit.")
+                client_socket.close()
+                sys.exit(0)
+            print(msg)
+        else:
+            print("Server socket closed. Press enter or ctrl+c to quit.")
+            client_socket.close()
+            sys.exit(0)
+
+
+def client_send():
+    global client_socket
+
+    msg = f"{client_username}: {input()}"
+    try:
+        client_socket.send(msg.encode())
+    except OSError:
+        sys.exit(0)
+
+
+def setup_client_socket():
     global tcp_port
     tcp_port = DEFAULT_PORT
-    global server_socket
+    global client_socket
 
     try:
         tcp_port_string = input(f"Enter connection port [{DEFAULT_PORT}]: ")
@@ -26,130 +57,64 @@ def setup_server_socket():
             tcp_port = int(tcp_port_string)
     except ValueError:
         print("Not a valid port. Please enter an integer.")
-        setup_server_socket()
+        setup_client_socket()
         return
 
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setblocking(False)
-
-    # Socket refresh fix.
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    socketV4 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    socketV6 = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
 
     try:
-        server_socket.bind(("", tcp_port))
-    except PermissionError:
-        print("Port reserved by operating system. Choose another one.")
-        setup_server_socket()
-        return
+        try:
+            socketV4.connect((server_ip, tcp_port))
+            client_socket = socketV4
+        except socket.gaierror:
+            try:
+                socketV6.connect((server_ip, tcp_port))
+                client_socket = socketV6
+            except socket.gaierror as e:
+                print(f"Failed to connect: {e}")
+                setup_server_address()
+                setup_client_socket()
+                return
     except OverflowError:
         print("Port is outside range. Port must be 0-65535")
-        setup_server_socket()
+        setup_client_socket()
         return
 
-    server_socket.listen(5)
 
-    print("Socket setup finished.")
+def setup_username():
+    global client_username
+    client_username = DEFAULT_USERNAME
 
-
-def set_keepalive_linux(after_idle_sec=1, interval_sec=3, max_fails=5):
-    """Set TCP keepalive on an open socket.
-
-    It activates after 1 second (after_idle_sec) of idleness,
-    then sends a keepalive ping once every 3 seconds (interval_sec),
-    and closes the connection after 5 failed ping (max_fails), or 15 seconds
-    """
-
-    global server_socket
-
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-    server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, after_idle_sec)
-    server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, interval_sec)
-    server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, max_fails)
-
-
-def assign_global_variables():
-    global input_sockets
-    global output_sockets
-    global message_queues
-    input_sockets = [server_socket]
-    output_sockets = []
-    message_queues = {}
-
-
-def add_msg_to_all_queue(msg: str):
-    for q in message_queues:
-        if q is not server_socket:
-            message_queues[q].put(msg)
-            if q not in output_sockets:
-                output_sockets.append(q)
-
-
-def handle_sockets():
-    readable_sockets, writable_sockets, exceptional_sockets = select.select(
-        input_sockets, output_sockets, input_sockets)
-
-    try:
-        for readable in readable_sockets:
-            # If server socket is readable: add a new client.
-            if readable is server_socket:
-                connection, client_address = readable.accept()
-                connection.setblocking(False)
-                input_sockets.append(connection)
-                message_queues[connection] = queue.Queue()
-            else:
-                try:
-                    msg = readable.recv(1024).decode()
-                except UnicodeDecodeError:
-                    print("UnicodeDecodeError")
-                    msg = "$UNICODE_DECODE_ERROR"
-                # If there is data from the socket: send it to all clients.
-                if msg:
-                    if msg != '$SERVER_CLOSED':
-                        add_msg_to_all_queue(msg)
-                else:
-                    if readable in output_sockets:
-                        output_sockets.remove(readable)
-                    input_sockets.remove(readable)
-                    readable.close()
-                    del message_queues[readable]
-    except TimeoutError:
-        print("A client timed out.")
-
-    for writable in writable_sockets:
-        try:
-            next_msg = message_queues[writable].get_nowait()
-        except queue.Empty:
-            output_sockets.remove(writable)
-        else:
-            writable.send(next_msg.encode())
-
-    for exceptional in exceptional_sockets:
-        input_sockets.remove(exceptional)
-        if exceptional in output_sockets:
-            output_sockets.remove(exceptional)
-        exceptional.close()
-        del message_queues[exceptional]
-
-    print("Signal handled.")
+    username_string = input(f"Enter username [{DEFAULT_USERNAME}]: ")
+    if username_string != "":
+        client_username = username_string
 
 
 def cleanup():
     try:
-        for s in input_sockets:
-            if s is not server_socket:
-                s.send('$SERVER_CLOSED'.encode())
-            s.close()
+        client_socket.close()
     except NameError:
         pass
 
 
+def setup_server_address():
+    global server_ip
+    server_ip = DEFAULT_IP
+
+    address_string = input(f"Enter server address [{DEFAULT_IP}]: ")
+    if address_string != "":
+        server_ip = address_string
+
+
 def main():
     try:
-        setup_server_socket()
-        set_keepalive_linux()
-        assign_global_variables()
+        setup_server_address()
+        setup_client_socket()
+        setup_username()
+        threading.Thread(target=client_recv, daemon=True).start()
         while True:
-            handle_sockets()
+            client_send()
 
     except (KeyboardInterrupt, SystemExit):
         print('\nReceived keyboard interrupt. Quitting.')
